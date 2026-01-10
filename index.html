@@ -35,6 +35,11 @@
       font-weight: 600;
       margin-top: 8px;
     }
+    .ok {
+      color: #2e7d32;
+      font-weight: 600;
+      margin-top: 8px;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -106,6 +111,7 @@
       Ten adres można skopiować tutaj, jeśli trzeba.
     </div>
     <div id="errorBox" class="error" style="display:none;"></div>
+    <div id="integrityBox" class="ok" style="display:none;"></div>
   </div>
 
   <div class="card">
@@ -126,8 +132,20 @@
 <script>
   function showError(msg) {
     const box = document.getElementById('errorBox');
-    box.textContent = msg;
+    const ibox = document.getElementById('integrityBox');
+    box.textContent = msg || '';
     box.style.display = msg ? 'block' : 'none';
+    // przy błędzie chowamy komunikat o integralności
+    if (msg) {
+      ibox.textContent = '';
+      ibox.style.display = 'none';
+    }
+  }
+
+  function showIntegrity(msg) {
+    const ibox = document.getElementById('integrityBox');
+    ibox.textContent = msg || '';
+    ibox.style.display = msg ? 'block' : 'none';
   }
 
   function clearInfo() {
@@ -137,6 +155,7 @@
     document.getElementById('infoSamples').textContent = '–';
     document.getElementById('tableContainer').innerHTML =
       'Brak danych – zeskanuj QR lub wklej adres z fragmentem <code>#&lt;kod&gt;</code> albo <code>#b=...</code>.';
+    showIntegrity('');
   }
 
   // Obsługa obu formatów:
@@ -217,7 +236,26 @@
     return bytes;
   }
 
-  // Dekoduje payload z ESP:
+  // CRC32 (ten sam algorytm co w firmware)
+  function crc32(bytes) {
+    let crc = 0xFFFFFFFF >>> 0;
+    const len = bytes.length;
+    for (let i = 0; i < len; i++) {
+      crc ^= bytes[i];
+      for (let b = 0; b < 8; b++) {
+        if (crc & 1) {
+          crc = (crc >>> 1) ^ 0xEDB88320;
+        } else {
+          crc = crc >>> 1;
+        }
+      }
+    }
+    // ~crc w JS:
+    crc = (~crc) >>> 0;
+    return crc >>> 0;
+  }
+
+  // Dekoduje payload z ESP (bez CRC!):
   // [0] = rok-2000, [1] = miesiac, [2] = dzien, [3] = interwal (np. 15)
   // dalej powtarza sie: [slot][T1enc][T2enc]
   function decodePayload(bytes) {
@@ -435,8 +473,42 @@
     }
 
     try {
-      const bytes = base64ToBytes(bParam);
-      const data = decodePayload(bytes);
+      const fullBytes = base64ToBytes(bParam);
+
+      if (!fullBytes.length) {
+        throw new Error('Brak bajtów po dekodowaniu Base64.');
+      }
+
+      let payloadBytes = fullBytes;
+      const minPayloadWithoutCrc = 4; // sam nagłówek
+      const hasPotentialCrc = fullBytes.length >= (minPayloadWithoutCrc + 4);
+
+      if (hasPotentialCrc) {
+        const dataLen = fullBytes.length - 4;
+        const payload = fullBytes.slice(0, dataLen);
+        const crcBytes = fullBytes.slice(dataLen);
+
+        const crcExpected =
+          ((crcBytes[0] << 24) >>> 0) |
+          ((crcBytes[1] << 16) >>> 0) |
+          ((crcBytes[2] << 8)  >>> 0) |
+          (crcBytes[3] >>> 0);
+
+        const crcCalc = crc32(payload);
+
+        if (crcCalc !== crcExpected >>> 0) {
+          showError('BŁĄD integralności: CRC32 się nie zgadza – dane zostały zmienione lub uszkodzone.');
+          return;
+        } else {
+          showIntegrity('Integralność danych: OK (CRC32 zgodne).');
+          payloadBytes = payload;
+        }
+      } else {
+        // starszy format bez CRC – nie blokujemy, tylko informujemy
+        showIntegrity('Integralność danych: brak CRC (starszy format QR).');
+      }
+
+      const data = decodePayload(payloadBytes);
       renderData(data);
     } catch (e) {
       console.error(e);
