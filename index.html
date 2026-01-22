@@ -56,46 +56,59 @@
       background: #f0f0f0;
       font-weight: 600;
     }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .controls input[type="text"] {
+      flex: 1 1 260px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: none;
+      background: #1976d2;
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button:hover {
+      background: #125ca4;
+    }
     .small {
       font-size: 0.8rem;
       color: #555;
-    }
-
-    /* --- LOGO OUTBOX --- */
-    .logo-card {
-      text-align: center;
-    }
-    .logo-main {
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: 0.14em;
-      color: #000000;
-    }
-    .logo-sub {
-      font-size: 12px;
-      margin-top: 4px;
-      color: #000000;
     }
   </style>
 </head>
 <body>
 
-  <!-- KARTA Z LOGO I KRÓTKIM OPISem -->
-  <div class="card logo-card">
-    <div class="logo-main">OUTBOX</div>
-    <div class="logo-sub">rejestrator temperatury</div>
-    <div class="small" style="margin-top:10px;">
-      Raport wygenerowany automatycznie z danych zapisanych w rejestratorze OUTBOX
-      na podstawie kodu QR z wydruku.
+  <div class="card">
+    <h1>Log temperatury z QR</h1>
+    <div class="info-row small">
+      Dane w QR zawierają punkty bazowe (co 1&nbsp;h) i wybrane punkty alarmowe.
+      Tabela poniżej pokazuje przebieg co 15&nbsp;min, tylko w czasie pracy rejestratora.
     </div>
   </div>
 
-  <!-- TYLKO INTEGRALNOŚĆ DANYCH – BEZ POLA DO WPISYWANIA -->
   <div class="card">
-    <h2>Integralność danych</h2>
+    <h2>Źródło danych</h2>
+    <div class="controls">
+      <input id="hashInput" type="text" placeholder="#&lt;kod_z_QR&gt; lub #b=..." />
+      <button id="btnLoadHash">Załaduj z pola</button>
+    </div>
     <div class="small">
-      Dane poniżej pochodzą bezpośrednio z zakodowanego ciągu w QR.
-      Dla nowych wydruków sprawdzana jest zgodność CRC32 – zmiana danych powoduje błąd.
+      Zwykle nie trzeba nic wpisywać – po zeskanowaniu QR telefon sam otwiera adres
+      z fragmentem <code>#&lt;kod&gt;</code> (nowy format) lub <code>#b=...&amp;r=...</code> (starsze wydruki).
+      Ten adres można skopiować tutaj, jeśli trzeba.
     </div>
     <div id="errorBox" class="error" style="display:none;"></div>
     <div id="integrityBox" class="ok" style="display:none;"></div>
@@ -112,7 +125,7 @@
   <div class="card">
     <h2>Tabela temperatur (co 15 min)</h2>
     <div id="tableContainer">
-      Brak danych – otwórz tę stronę skanując kod QR z wydruku rejestratora OUTBOX.
+      Brak danych – zeskanuj QR lub wklej adres z fragmentem <code>#&lt;kod&gt;</code> albo <code>#b=...</code>.
     </div>
   </div>
 
@@ -141,7 +154,7 @@
     document.getElementById('infoInterval').textContent = '–';
     document.getElementById('infoSamples').textContent = '–';
     document.getElementById('tableContainer').innerHTML =
-      'Brak danych – otwórz tę stronę skanując kod QR z wydruku rejestratora OUTBOX.';
+      'Brak danych – zeskanuj QR lub wklej adres z fragmentem <code>#&lt;kod&gt;</code> albo <code>#b=...</code>.';
     showIntegrity('');
   }
 
@@ -176,4 +189,356 @@
     if (!rawHash) return null;
     let h = rawHash;
     if (h.startsWith('#')) h = h.substring(1);
-    if (!h
+    if (!h) return null;
+
+    // stary format: query string "b=...&r=..."
+    if (h.includes('=')) {
+      const parts = h.split('&');
+      for (const part of parts) {
+        const [k, v] = part.split('=');
+        if (k === 'r') {
+          return v ? decodeURIComponent(v) : '';
+        }
+      }
+      return null;
+    }
+
+    // nowy format: "<b64url>" lub "<b64url>.<rej>"
+    const parts = h.split('.');
+    if (parts.length >= 2 && parts[1].length > 0) {
+      return parts[1];
+    }
+    return null;
+  }
+
+  // Base64 / Base64URL -> bytes (obsługuje obie wersje)
+  function base64ToBytes(b64like) {
+    if (!b64like) {
+      return new Uint8Array(0);
+    }
+
+    let s = b64like;
+
+    // Base64URL -> Base64
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+
+    // dopelnij '=' do dlugosci podzielnej przez 4
+    while (s.length % 4 !== 0) {
+      s += '=';
+    }
+
+    const binStr = atob(s);
+    const len = binStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binStr.charCodeAt(i) & 0xFF;
+    }
+    return bytes;
+  }
+
+  // CRC32 (ten sam algorytm co w firmware)
+  function crc32(bytes) {
+    let crc = 0xFFFFFFFF >>> 0;
+    const len = bytes.length;
+    for (let i = 0; i < len; i++) {
+      crc ^= bytes[i];
+      for (let b = 0; b < 8; b++) {
+        if (crc & 1) {
+          crc = (crc >>> 1) ^ 0xEDB88320;
+        } else {
+          crc = crc >>> 1;
+        }
+      }
+    }
+    // ~crc w JS:
+    crc = (~crc) >>> 0;
+    return crc >>> 0;
+  }
+
+  // Dekoduje payload z ESP (bez CRC!):
+  // [0] = rok-2000, [1] = miesiac, [2] = dzien, [3] = interwal (np. 15)
+  // dalej powtarza sie: [slot][T1enc][T2enc]
+  function decodePayload(bytes) {
+    if (!bytes || bytes.length < 4) {
+      throw new Error('Za mało danych (nagłówek krótszy niż 4 bajty).');
+    }
+
+    const yearOff    = bytes[0];
+    const year       = 2000 + yearOff;
+    const month      = bytes[1];
+    const day        = bytes[2];
+    const intervalMin = bytes[3];
+
+    if (intervalMin === 0) {
+      throw new Error('Interwał = 0 w nagłówku.');
+    }
+    if (60 % intervalMin !== 0 || 1440 % intervalMin !== 0) {
+      throw new Error('Interwał z nagłówka nie dzieli 60/1440.');
+    }
+
+    const slotsPerHour = 60 / intervalMin;
+    const totalSlotsPerDay = 1440 / intervalMin;
+
+    const samples = [];
+
+    let i = 4;
+    while (i + 2 < bytes.length) {
+      const slot  = bytes[i++];
+      const t1Enc = bytes[i++];
+      const t2Enc = bytes[i++];
+
+      if (slot >= totalSlotsPerDay) {
+        continue;
+      }
+
+      const hour   = Math.floor(slot / slotsPerHour);
+      const within = slot % slotsPerHour;
+      const minute = within * intervalMin;
+
+      const t1 = t1Enc - 40;
+      const t2 = t2Enc - 40;
+
+      samples.push({ slot, hour, minute, t1, t2 });
+    }
+
+    // sort po slocie (czas rosnąco)
+    samples.sort((a, b) => a.slot - b.slot);
+
+    return {
+      year,
+      month,
+      day,
+      intervalMin,
+      samples,
+      totalSlotsPerDay
+    };
+  }
+
+  function pad2(n) {
+    return n < 10 ? '0' + n : '' + n;
+  }
+
+  // Buduje pełną siatkę co intervalMin (np. 96 punktów dla 15 min)
+  // z interpolacją liniową między próbkami z QR (ukrytą),
+  // ale TYLKO w zakresie, w którym są realne dane (między pierwszym a ostatnim slotem).
+  function buildFullGrid(data) {
+    const interval = data.intervalMin;
+    const totalSlots = data.totalSlotsPerDay;
+    const realBySlot = new Array(totalSlots).fill(null);
+
+    // wrzucamy realne próbki (bazowe + alarmowe) do tablicy wg slotu
+    data.samples.forEach(s => {
+      if (s.slot >= 0 && s.slot < totalSlots) {
+        realBySlot[s.slot] = { t1: s.t1, t2: s.t2 };
+      }
+    });
+
+    // znajdz pierwszy i ostatni slot z realnymi danymi
+    let firstReal = -1;
+    let lastReal  = -1;
+    for (let i = 0; i < totalSlots; ++i) {
+      if (realBySlot[i]) {
+        firstReal = i;
+        break;
+      }
+    }
+    for (let i = totalSlots - 1; i >= 0; --i) {
+      if (realBySlot[i]) {
+        lastReal = i;
+        break;
+      }
+    }
+
+    if (firstReal === -1 || lastReal === -1) {
+      // brak jakichkolwiek danych
+      return [];
+    }
+
+    // tablica poprzednich i następnych realnych slotów (dla interpolacji wewnątrz zakresu)
+    const prevIdx = new Array(totalSlots).fill(-1);
+    const nextIdx = new Array(totalSlots).fill(-1);
+
+    let last = -1;
+    for (let i = 0; i < totalSlots; ++i) {
+      if (realBySlot[i]) last = i;
+      prevIdx[i] = last;
+    }
+
+    last = -1;
+    for (let i = totalSlots - 1; i >= 0; --i) {
+      if (realBySlot[i]) last = i;
+      nextIdx[i] = last;
+    }
+
+    const grid = [];
+
+    // generujemy tylko od firstReal do lastReal – zero danych przed/po
+    for (let slot = firstReal; slot <= lastReal; ++slot) {
+      const totalMinutes = slot * interval;
+      const hour = Math.floor(totalMinutes / 60);
+      const minute = totalMinutes % 60;
+
+      let t1, t2;
+
+      if (realBySlot[slot]) {
+        // realny punkt z QR
+        t1 = realBySlot[slot].t1;
+        t2 = realBySlot[slot].t2;
+      } else {
+        const p = prevIdx[slot];
+        const n = nextIdx[slot];
+
+        if (p === -1 && n === -1) {
+          continue;
+        } else if (p === -1) {
+          t1 = realBySlot[n].t1;
+          t2 = realBySlot[n].t2;
+        } else if (n === -1) {
+          t1 = realBySlot[p].t1;
+          t2 = realBySlot[p].t2;
+        } else {
+          const span = n - p;
+          const pos  = slot - p;
+          const w    = span === 0 ? 0 : (pos / span);
+
+          const t1p = realBySlot[p].t1;
+          const t1n = realBySlot[n].t1;
+          const t2p = realBySlot[p].t2;
+          const t2n = realBySlot[n].t2;
+
+          t1 = t1p + (t1n - t1p) * w;
+          t2 = t2p + (t2n - t2p) * w;
+        }
+      }
+
+      grid.push({
+        slot,
+        hour,
+        minute,
+        t1,
+        t2
+      });
+    }
+
+    return grid;
+  }
+
+  function renderData(data) {
+    const dateStr = pad2(data.day) + '.' + pad2(data.month) + '.' + data.year;
+    document.getElementById('infoDate').textContent = dateStr;
+    document.getElementById('infoInterval').textContent = data.intervalMin + ' min';
+    document.getElementById('infoSamples').textContent = data.samples.length;
+
+    const grid = buildFullGrid(data);
+
+    if (!grid.length) {
+      document.getElementById('tableContainer').innerHTML = 'Brak próbek w danych QR.';
+      return;
+    }
+
+    let html = '<table><thead><tr>' +
+      '<th>Lp</th><th>Czas</th><th>T1 [°C]</th><th>T2 [°C]</th>' +
+      '</tr></thead><tbody>';
+
+    grid.forEach((row, idx) => {
+      const timeStr = pad2(row.hour) + ':' + pad2(row.minute);
+      const t1Str = (row.t1 !== null && row.t1 !== undefined) ? row.t1.toFixed(1) : '–';
+      const t2Str = (row.t2 !== null && row.t2 !== undefined) ? row.t2.toFixed(1) : '–';
+
+      html += '<tr>' +
+        '<td>' + (idx + 1) + '</td>' +
+        '<td>' + timeStr + '</td>' +
+        '<td>' + t1Str + '</td>' +
+        '<td>' + t2Str + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('tableContainer').innerHTML = html;
+  }
+
+  function processFromHash(hash) {
+    showError('');
+    clearInfo();
+
+    const bParam = getBParamFromHash(hash);
+    if (!bParam) {
+      showError('Nie znaleziono danych w fragmencie adresu (hash). Oczekiwany format: "#<kod>" lub "#b=...&r=...".');
+      return;
+    }
+
+    const rParam = getRParamFromHash(hash);
+    if (rParam) {
+      document.getElementById('infoRej').textContent = rParam;
+    }
+
+    try {
+      const fullBytes = base64ToBytes(bParam);
+
+      if (!fullBytes.length) {
+        throw new Error('Brak bajtów po dekodowaniu Base64.');
+      }
+
+      let payloadBytes = fullBytes;
+      const minPayloadWithoutCrc = 4; // sam nagłówek
+      const hasPotentialCrc = fullBytes.length >= (minPayloadWithoutCrc + 4);
+
+      if (hasPotentialCrc) {
+        const dataLen = fullBytes.length - 4;
+        const payload = fullBytes.slice(0, dataLen);
+        const crcBytes = fullBytes.slice(dataLen);
+
+        const crcExpected =
+          ((crcBytes[0] << 24) >>> 0) |
+          ((crcBytes[1] << 16) >>> 0) |
+          ((crcBytes[2] << 8)  >>> 0) |
+          (crcBytes[3] >>> 0);
+
+        const crcCalc = crc32(payload);
+
+        if (crcCalc !== crcExpected >>> 0) {
+          showError('BŁĄD integralności: CRC32 się nie zgadza – dane zostały zmienione lub uszkodzone.');
+          return;
+        } else {
+          showIntegrity('Integralność danych: OK (CRC32 zgodne).');
+          payloadBytes = payload;
+        }
+      } else {
+        // starszy format bez CRC – nie blokujemy, tylko informujemy
+        showIntegrity('Integralność danych: brak CRC (starszy format QR).');
+      }
+
+      const data = decodePayload(payloadBytes);
+      renderData(data);
+    } catch (e) {
+      console.error(e);
+      showError('Błąd dekodowania: ' + e.message);
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const currentHash = window.location.hash || '';
+    const hashInput = document.getElementById('hashInput');
+
+    if (currentHash) {
+      hashInput.value = currentHash;
+      processFromHash(currentHash);
+    }
+
+    document.getElementById('btnLoadHash').addEventListener('click', () => {
+      let h = hashInput.value.trim();
+      if (!h) {
+        showError('Wklej fragment w postaci "#<kod>" (nowy format) lub "#b=...&r=..." (stary).');
+        return;
+      }
+      if (!h.startsWith('#')) {
+        h = '#' + h;
+      }
+      processFromHash(h);
+    });
+  });
+</script>
+
+</body>
+</html>
+
