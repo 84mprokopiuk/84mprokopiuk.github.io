@@ -88,9 +88,9 @@
     .controls {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 12px;
       align-items: center;
-      margin-top: 8px;
+      margin-top: 4px;
     }
     .controls input[type="text"] {
       flex: 1 1 260px;
@@ -100,18 +100,33 @@
       font-family: monospace;
       font-size: 0.85rem;
     }
+
+    /* WIĘKSZE PRZYCISKI + IKONKI */
     button {
-      padding: 6px 12px;
-      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 6px;
       border: none;
-      background: #000;     /* CZARNY */
-      color: white;
+      background: #000;
+      color: #fff;
       cursor: pointer;
-      font-size: 0.9rem;
+      font-size: 1rem;
+      font-weight: 500;
+      min-width: 160px;
+      justify-content: center;
     }
     button:hover {
-      background: #333;     /* trochę jaśniejszy na hover */
+      background: #333;
     }
+    .btn-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      display: inline-block;
+    }
+
     .small {
       font-size: 0.8rem;
       color: #555;
@@ -156,11 +171,27 @@
     </div>
   </div>
 
-  <!-- KARTA: TYLKO PRZYCISKI FUNKCJONALNE -->
+  <!-- KARTA: PRZYCISKI FUNKCJONALNE -->
   <div class="card">
     <div class="controls">
-      <button id="btnPrint">Drukuj dane</button>
-      <button id="btnSendLink">Wyślij link</button>
+      <button id="btnPrint">
+        <!-- IKONA DRUKARKI -->
+        <svg class="btn-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="5" width="14" height="9" rx="1" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+          <rect x="6" y="2" width="8" height="4" rx="1" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+          <circle cx="7" cy="9" r="1" fill="#ffffff"/>
+        </svg>
+        <span>Drukuj dane</span>
+      </button>
+
+      <button id="btnSendLink">
+        <!-- IKONA KOPERTY -->
+        <svg class="btn-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2.5" y="4.5" width="15" height="11" rx="1.2" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+          <polyline points="3,5 10,11 17,5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Wyślij link</span>
+      </button>
     </div>
   </div>
 
@@ -195,7 +226,6 @@
     const ibox = document.getElementById('integrityBox');
     box.textContent = msg || '';
     box.style.display = msg ? 'block' : 'none';
-    // przy błędzie chowamy komunikat o integralności
     if (msg) {
       ibox.textContent = '';
       ibox.style.display = 'none';
@@ -218,16 +248,12 @@
     showIntegrity('');
   }
 
-  // Obsługa obu formatów:
-  // 1) nowy: "#<b64url>.<rej>" lub "#<b64url>"
-  // 2) stary: "#b=...&r=..."
   function getBParamFromHash(rawHash) {
     if (!rawHash) return null;
     let h = rawHash;
     if (h.startsWith('#')) h = h.substring(1);
     if (!h) return null;
 
-    // stary format: query string "b=...&r=..."
     if (h.includes('=')) {
       const parts = h.split('&');
       for (const part of parts) {
@@ -239,7 +265,6 @@
       return null;
     }
 
-    // nowy format: "<b64url>" lub "<b64url>.<rej>"
     const parts = h.split('.');
     const b64 = parts[0] || '';
     return b64 || null;
@@ -251,7 +276,6 @@
     if (h.startsWith('#')) h = h.substring(1);
     if (!h) return null;
 
-    // stary format: query string "b=...&r=..."
     if (h.includes('=')) {
       const parts = h.split('&');
       for (const part of parts) {
@@ -263,7 +287,6 @@
       return null;
     }
 
-    // nowy format: "<b64url>" lub "<b64url>.<rej>"
     const parts = h.split('.');
     if (parts.length >= 2 && parts[1].length > 0) {
       return parts[1];
@@ -271,7 +294,6 @@
     return null;
   }
 
-  // Base64 / Base64URL -> bytes (obsługuje obie wersje)
   function base64ToBytes(b64like) {
     if (!b64like) {
       return new Uint8Array(0);
