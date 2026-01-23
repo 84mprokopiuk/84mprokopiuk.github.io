@@ -104,13 +104,13 @@
       padding: 6px 12px;
       border-radius: 4px;
       border: none;
-      background: #1976d2;
+      background: #000;     /* CZARNY */
       color: white;
       cursor: pointer;
       font-size: 0.9rem;
     }
     button:hover {
-      background: #125ca4;
+      background: #333;     /* trochę jaśniejszy na hover */
     }
     .small {
       font-size: 0.8rem;
@@ -123,24 +123,19 @@
   <!-- ===== HEADER ===== -->
   <div class="header">
     <div class="logo-wrap">
-
       <!-- OUTBOX SVG – LITERY OSOBNO -->
       <svg width="340" height="56" viewBox="0 0 340 56" xmlns="http://www.w3.org/2000/svg">
         <g fill="#ffffff">
-
           <!-- O -->
           <rect x="0" y="0" width="48" height="48"/>
           <rect x="10" y="10" width="28" height="28" fill="#000"/>
-
           <!-- U -->
           <rect x="60" y="0" width="10" height="48"/>
           <rect x="60" y="38" width="34" height="10"/>
           <rect x="84" y="0" width="10" height="48"/>
-
           <!-- T -->
           <rect x="108" y="0" width="48" height="10"/>
           <rect x="127" y="0" width="10" height="48"/>
-
           <!-- B -->
           <rect x="168" y="0" width="10" height="48"/>
           <rect x="168" y="0" width="34" height="10"/>
@@ -148,28 +143,24 @@
           <rect x="168" y="38" width="34" height="10"/>
           <rect x="202" y="10" width="10" height="9"/>
           <rect x="202" y="29" width="10" height="9"/>
-
           <!-- O -->
           <rect x="224" y="0" width="48" height="48"/>
           <rect x="234" y="10" width="28" height="28" fill="#000"/>
-
           <!-- X (przesunięty w prawo) -->
           <polygon points="302,0 316,0 280,48 266,48"/>
           <polygon points="266,0 280,0 316,48 302,48"/>
-
         </g>
       </svg>
-
       <!-- SUBTITLE -->
       <div class="logo-sub">datalogger recording</div>
     </div>
   </div>
 
+  <!-- KARTA: TYLKO PRZYCISKI FUNKCJONALNE -->
   <div class="card">
-    <h1>Log temperatury z QR</h1>
-    <div class="info-row small">
-      Dane w QR zawierają punkty bazowe (co 1&nbsp;h) i wybrane punkty alarmowe.
-      Tabela poniżej pokazuje przebieg co 15&nbsp;min, tylko w czasie pracy rejestratora.
+    <div class="controls">
+      <button id="btnPrint">Drukuj dane</button>
+      <button id="btnSendLink">Wyślij link</button>
     </div>
   </div>
 
@@ -287,11 +278,7 @@
     }
 
     let s = b64like;
-
-    // Base64URL -> Base64
     s = s.replace(/-/g, '+').replace(/_/g, '/');
-
-    // dopelnij '=' do dlugosci podzielnej przez 4
     while (s.length % 4 !== 0) {
       s += '=';
     }
@@ -305,7 +292,6 @@
     return bytes;
   }
 
-  // CRC32 (ten sam algorytm co w firmware)
   function crc32(bytes) {
     let crc = 0xFFFFFFFF >>> 0;
     const len = bytes.length;
@@ -319,14 +305,10 @@
         }
       }
     }
-    // ~crc w JS:
     crc = (~crc) >>> 0;
     return crc >>> 0;
   }
 
-  // Dekoduje payload z ESP (bez CRC!):
-  // [0] = rok-2000, [1] = miesiac, [2] = dzien, [3] = interwal (np. 15)
-  // dalej powtarza sie: [slot][T1enc][T2enc]
   function decodePayload(bytes) {
     if (!bytes || bytes.length < 4) {
       throw new Error('Za mało danych (nagłówek krótszy niż 4 bajty).');
@@ -349,7 +331,6 @@
     const totalSlotsPerDay = 1440 / intervalMin;
 
     const samples = [];
-
     let i = 4;
     while (i + 2 < bytes.length) {
       const slot  = bytes[i++];
@@ -370,7 +351,6 @@
       samples.push({ slot, hour, minute, t1, t2 });
     }
 
-    // sort po slocie (czas rosnąco)
     samples.sort((a, b) => a.slot - b.slot);
 
     return {
@@ -387,22 +367,17 @@
     return n < 10 ? '0' + n : '' + n;
   }
 
-  // Buduje pełną siatkę co intervalMin (np. 96 punktów dla 15 min)
-  // z interpolacją liniową między próbkami z QR (ukrytą),
-  // ale TYLKO w zakresie, w którym są realne dane (między pierwszym a ostatnim slotem).
   function buildFullGrid(data) {
     const interval = data.intervalMin;
-       const totalSlots = data.totalSlotsPerDay;
+    const totalSlots = data.totalSlotsPerDay;
     const realBySlot = new Array(totalSlots).fill(null);
 
-    // wrzucamy realne próbki (bazowe + alarmowe) do tablicy wg slotu
     data.samples.forEach(s => {
       if (s.slot >= 0 && s.slot < totalSlots) {
         realBySlot[s.slot] = { t1: s.t1, t2: s.t2 };
       }
     });
 
-    // znajdz pierwszy i ostatni slot z realnymi danymi
     let firstReal = -1;
     let lastReal  = -1;
     for (let i = 0; i < totalSlots; ++i) {
@@ -419,11 +394,9 @@
     }
 
     if (firstReal === -1 || lastReal === -1) {
-      // brak jakichkolwiek danych
       return [];
     }
 
-    // tablica poprzednich i następnych realnych slotów (dla interpolacji wewnątrz zakresu)
     const prevIdx = new Array(totalSlots).fill(-1);
     const nextIdx = new Array(totalSlots).fill(-1);
 
@@ -440,17 +413,13 @@
     }
 
     const grid = [];
-
-    // generujemy tylko od firstReal do lastReal – zero danych przed/po
     for (let slot = firstReal; slot <= lastReal; ++slot) {
       const totalMinutes = slot * interval;
       const hour = Math.floor(totalMinutes / 60);
       const minute = totalMinutes % 60;
 
       let t1, t2;
-
       if (realBySlot[slot]) {
-        // realny punkt z QR
         t1 = realBySlot[slot].t1;
         t2 = realBySlot[slot].t2;
       } else {
@@ -480,13 +449,7 @@
         }
       }
 
-      grid.push({
-        slot,
-        hour,
-        minute,
-        t1,
-        t2
-      });
+      grid.push({ slot, hour, minute, t1, t2 });
     }
 
     return grid;
@@ -543,13 +506,12 @@
 
     try {
       const fullBytes = base64ToBytes(bParam);
-
       if (!fullBytes.length) {
         throw new Error('Brak bajtów po dekodowaniu Base64.');
       }
 
       let payloadBytes = fullBytes;
-      const minPayloadWithoutCrc = 4; // sam nagłówek
+      const minPayloadWithoutCrc = 4;
       const hasPotentialCrc = fullBytes.length >= (minPayloadWithoutCrc + 4);
 
       if (hasPotentialCrc) {
@@ -573,7 +535,6 @@
           payloadBytes = payload;
         }
       } else {
-        // starszy format bez CRC – nie blokujemy, tylko informujemy
         showIntegrity('Integralność danych: brak CRC (starszy format QR).');
       }
 
@@ -587,6 +548,27 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     const currentHash = window.location.hash || '';
+
+    const btnPrint = document.getElementById('btnPrint');
+    if (btnPrint) {
+      btnPrint.addEventListener('click', () => {
+        window.print();
+      });
+    }
+
+    const btnSendLink = document.getElementById('btnSendLink');
+    if (btnSendLink) {
+      btnSendLink.addEventListener('click', () => {
+        const url = window.location.href;
+        const subject = 'Raport temperatur z rejestratora OUTBOX';
+        const body = 'Link do raportu z rejestratora OUTBOX:\n' + url;
+        const mailto = 'mailto:?subject=' +
+          encodeURIComponent(subject) +
+          '&body=' +
+          encodeURIComponent(body);
+        window.location.href = mailto;
+      });
+    }
 
     if (currentHash) {
       processFromHash(currentHash);
