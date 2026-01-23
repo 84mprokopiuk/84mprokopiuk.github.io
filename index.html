@@ -9,6 +9,35 @@
       margin: 20px;
       background: #f5f5f5;
     }
+
+    /* ===== HEADER z LOGO ===== */
+    .header {
+      background: #000;
+      border-radius: 8px;
+      padding: 16px 0 12px;
+      margin-bottom: 16px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    }
+    .logo-wrap {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .logo-wrap svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .logo-sub {
+      color: #fff;
+      font-size: 0.8rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      opacity: 0.9;
+    }
+
     h1 {
       font-size: 1.4rem;
       margin-bottom: 0.3rem;
@@ -91,6 +120,51 @@
 </head>
 <body>
 
+  <!-- ===== HEADER ===== -->
+  <div class="header">
+    <div class="logo-wrap">
+
+      <!-- OUTBOX SVG – LITERY OSOBNO -->
+      <svg width="340" height="56" viewBox="0 0 340 56" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#ffffff">
+
+          <!-- O -->
+          <rect x="0" y="0" width="48" height="48"/>
+          <rect x="10" y="10" width="28" height="28" fill="#000"/>
+
+          <!-- U -->
+          <rect x="60" y="0" width="10" height="48"/>
+          <rect x="60" y="38" width="34" height="10"/>
+          <rect x="84" y="0" width="10" height="48"/>
+
+          <!-- T -->
+          <rect x="108" y="0" width="48" height="10"/>
+          <rect x="127" y="0" width="10" height="48"/>
+
+          <!-- B -->
+          <rect x="168" y="0" width="10" height="48"/>
+          <rect x="168" y="0" width="34" height="10"/>
+          <rect x="168" y="19" width="34" height="10"/>
+          <rect x="168" y="38" width="34" height="10"/>
+          <rect x="202" y="10" width="10" height="9"/>
+          <rect x="202" y="29" width="10" height="9"/>
+
+          <!-- O -->
+          <rect x="224" y="0" width="48" height="48"/>
+          <rect x="234" y="10" width="28" height="28" fill="#000"/>
+
+          <!-- X (przesunięty w prawo) -->
+          <polygon points="302,0 316,0 280,48 266,48"/>
+          <polygon points="266,0 280,0 316,48 302,48"/>
+
+        </g>
+      </svg>
+
+      <!-- SUBTITLE -->
+      <div class="logo-sub">datalogger recording</div>
+    </div>
+  </div>
+
   <div class="card">
     <h1>Log temperatury z QR</h1>
     <div class="info-row small">
@@ -99,16 +173,11 @@
     </div>
   </div>
 
+  <!-- KARTA: TEST INTEGRALNOŚCI -->
   <div class="card">
-    <h2>Źródło danych</h2>
-    <div class="controls">
-      <input id="hashInput" type="text" placeholder="#&lt;kod_z_QR&gt; lub #b=..." />
-      <button id="btnLoadHash">Załaduj z pola</button>
-    </div>
+    <h2>Test integralności danych</h2>
     <div class="small">
-      Zwykle nie trzeba nic wpisywać – po zeskanowaniu QR telefon sam otwiera adres
-      z fragmentem <code>#&lt;kod&gt;</code> (nowy format) lub <code>#b=...&amp;r=...</code> (starsze wydruki).
-      Ten adres można skopiować tutaj, jeśli trzeba.
+      Wynik testu zgodności danych z wydruku QR z zapisanym w nim kodem kontrolnym CRC32.
     </div>
     <div id="errorBox" class="error" style="display:none;"></div>
     <div id="integrityBox" class="ok" style="display:none;"></div>
@@ -125,7 +194,7 @@
   <div class="card">
     <h2>Tabela temperatur (co 15 min)</h2>
     <div id="tableContainer">
-      Brak danych – zeskanuj QR lub wklej adres z fragmentem <code>#&lt;kod&gt;</code> albo <code>#b=...</code>.
+      Brak danych – strona powinna zostać otwarta z linku w kodzie QR rejestratora.
     </div>
   </div>
 
@@ -154,7 +223,7 @@
     document.getElementById('infoInterval').textContent = '–';
     document.getElementById('infoSamples').textContent = '–';
     document.getElementById('tableContainer').innerHTML =
-      'Brak danych – zeskanuj QR lub wklej adres z fragmentem <code>#&lt;kod&gt;</code> albo <code>#b=...</code>.';
+      'Brak danych – strona powinna zostać otwarta z linku w kodzie QR rejestratora.';
     showIntegrity('');
   }
 
@@ -323,7 +392,7 @@
   // ale TYLKO w zakresie, w którym są realne dane (między pierwszym a ostatnim slotem).
   function buildFullGrid(data) {
     const interval = data.intervalMin;
-    const totalSlots = data.totalSlotsPerDay;
+       const totalSlots = data.totalSlotsPerDay;
     const realBySlot = new Array(totalSlots).fill(null);
 
     // wrzucamy realne próbki (bazowe + alarmowe) do tablicy wg slotu
@@ -518,27 +587,14 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     const currentHash = window.location.hash || '';
-    const hashInput = document.getElementById('hashInput');
 
     if (currentHash) {
-      hashInput.value = currentHash;
       processFromHash(currentHash);
+    } else {
+      showError('Brak danych do testu integralności. Strona powinna zostać otwarta z linku w kodzie QR rejestratora.');
     }
-
-    document.getElementById('btnLoadHash').addEventListener('click', () => {
-      let h = hashInput.value.trim();
-      if (!h) {
-        showError('Wklej fragment w postaci "#<kod>" (nowy format) lub "#b=...&r=..." (stary).');
-        return;
-      }
-      if (!h.startsWith('#')) {
-        h = '#' + h;
-      }
-      processFromHash(h);
-    });
   });
 </script>
 
 </body>
 </html>
-
